@@ -133,52 +133,36 @@ def process_event(payload: dict[str, Any]) -> dict[str, Any]:
         ocir_repository=target.ocir_repository,
     )
 
-    manifest_directory_missing = False
-
-    try:
-        file_paths = client.list_yaml_files_recursive(target.manifest_root)
-    except requests.HTTPError as exc:
-        if exc.response is None or exc.response.status_code != 404:
-            raise
-        manifest_directory_missing = True
-        emit_log(
-            logging.INFO,
-            "manifest.directory_missing",
-            branch=github_config.branch,
-            manifest_root=target.manifest_root,
-            repository_path=event.repository_path,
-        )
-        file_paths = []
+    file_paths = client.find_candidate_yaml_files(target.manifest_root, target.image_repository)
 
     updated_files: list[dict[str, str]] = []
-    if not manifest_directory_missing:
-        emit_log(
-            logging.INFO,
-            "manifest.files_listed",
-            branch=github_config.branch,
-            file_count=len(file_paths),
-            manifest_root=target.manifest_root,
-        )
+    emit_log(
+        logging.INFO,
+        "manifest.files_listed",
+        branch=github_config.branch,
+        file_count=len(file_paths),
+        manifest_root=target.manifest_root,
+    )
 
-        for file_path in file_paths:
-            updated = update_manifest_file(
-                client=client,
-                file_path=file_path,
-                image_repository=target.image_repository,
+    for file_path in file_paths:
+        updated = update_manifest_file(
+            client=client,
+            file_path=file_path,
+            image_repository=target.image_repository,
+            tag=event.tag,
+            commit_message=github_config.commit_message_template.format(
+                repository_path=target.ocir_repository,
                 tag=event.tag,
-                commit_message=github_config.commit_message_template.format(
-                    repository_path=target.ocir_repository,
-                    tag=event.tag,
-                    digest=event.digest or "",
-                    image_repository=target.image_repository,
-                    manifest_path=file_path,
-                ),
-            )
-            if updated is not None:
-                updated_files.append(updated)
+                digest=event.digest or "",
+                image_repository=target.image_repository,
+                manifest_path=file_path,
+            ),
+        )
+        if updated is not None:
+            updated_files.append(updated)
 
     result = {
-        "status": "ignored" if manifest_directory_missing else ("updated" if updated_files else "noop"),
+        "status": "updated" if updated_files else ("ignored" if not file_paths else "noop"),
         "branch": github_config.branch,
         "manifest_root": target.manifest_root,
         "repository_path": event.repository_path,
@@ -187,8 +171,8 @@ def process_event(payload: dict[str, Any]) -> dict[str, Any]:
         "tag": event.tag,
         "updated_files": updated_files,
     }
-    if manifest_directory_missing:
-        result["reason"] = "No matching manifest directory"
+    if not file_paths:
+        result["reason"] = "No matching manifests found"
 
     cleanup_result = cleanup_pushed_repository_images(event, target.ocir_repository)
     if cleanup_result is not None:
@@ -797,33 +781,85 @@ class GitHubContentsClient:
 
         return base64.b64decode(encoded_content).decode("utf-8"), body["sha"]
 
+    def find_candidate_yaml_files(self, path: str, image_repository: str) -> list[str]:
+        query = f'"{image_repository}:" repo:{self.config.owner}/{self.config.repo} path:{path}'
+        search_results = self._search_code_paths(query)
+        if search_results is not None:
+            emit_log(
+                logging.INFO,
+                "manifest.candidates_resolved",
+                candidate_count=len(search_results),
+                image_repository=image_repository,
+                manifest_root=path,
+                strategy="code_search",
+            )
+            return search_results
+
+        yaml_files = self.list_yaml_files_recursive(path)
+        emit_log(
+            logging.INFO,
+            "manifest.candidates_resolved",
+            candidate_count=len(yaml_files),
+            image_repository=image_repository,
+            manifest_root=path,
+            strategy="git_tree_fallback",
+        )
+        return yaml_files
+
     def list_yaml_files_recursive(self, path: str) -> list[str]:
-        pending_paths = [path]
+        response = self.session.get(
+            self._tree_url(self.config.branch),
+            params={"recursive": "1"},
+            timeout=self.config.timeout_seconds,
+        )
+        self.raise_for_status(response, f"Unable to list repository tree for branch {self.config.branch}")
+
+        body = response.json()
+        items = body.get("tree")
+        if not isinstance(items, list):
+            raise ManifestUpdateError("Expected GitHub git tree response to contain a tree array")
+        if body.get("truncated"):
+            raise ManifestUpdateError("GitHub git tree response was truncated")
+
+        root_prefix = f"{path}/"
         yaml_files: list[str] = []
-
-        while pending_paths:
-            current_path = pending_paths.pop()
-            body = self._get_contents(current_path)
-            if not isinstance(body, list):
-                raise ManifestUpdateError(f"Expected {current_path} to be a GitHub directory listing")
-
-            for item in body:
-                item_type = item.get("type")
-                if item_type == "dir":
-                    pending_paths.append(item["path"])
-                elif item_type == "file" and item.get("name", "").endswith((".yaml", ".yml")):
-                    yaml_files.append(item["path"])
+        for item in items:
+            item_path = item.get("path", "")
+            if item.get("type") != "blob":
+                continue
+            if item_path != path and not item_path.startswith(root_prefix):
+                continue
+            if item_path.endswith((".yaml", ".yml")):
+                yaml_files.append(item_path)
 
         return sorted(yaml_files)
 
-    def _get_contents(self, path: str) -> Any:
+    def _search_code_paths(self, query: str) -> list[str] | None:
         response = self.session.get(
-            self._contents_url(path),
-            params={"ref": self.config.branch},
+            f"{self.config.api_url}/search/code",
+            params={"q": query, "per_page": 100},
             timeout=self.config.timeout_seconds,
         )
-        self.raise_for_status(response, f"Unable to list directory {path} from branch {self.config.branch}")
-        return response.json()
+        if response.status_code in {403, 422, 503}:
+            emit_log(
+                logging.WARNING,
+                "manifest.code_search_fallback",
+                query=query,
+                reason=f"http_{response.status_code}",
+            )
+            return None
+
+        self.raise_for_status(response, "Unable to search GitHub code for manifest candidates")
+        body = response.json()
+        items = body.get("items")
+        if not isinstance(items, list):
+            raise ManifestUpdateError("Expected GitHub code search response to contain an items array")
+
+        return sorted(
+            item["path"]
+            for item in items
+            if item.get("path", "").endswith((".yaml", ".yml"))
+        )
 
     def update_file(self, path: str, sha: str, content: str, message: str) -> str:
         payload = {
@@ -854,6 +890,14 @@ class GitHubContentsClient:
             f"{quote(self.config.owner, safe='')}/"
             f"{quote(self.config.repo, safe='')}/contents/"
             f"{quote(path, safe='/')}"
+        )
+
+    def _tree_url(self, ref: str) -> str:
+        return (
+            f"{self.config.api_url}/repos/"
+            f"{quote(self.config.owner, safe='')}/"
+            f"{quote(self.config.repo, safe='')}/git/trees/"
+            f"{quote(ref, safe='')}"
         )
 
     @staticmethod

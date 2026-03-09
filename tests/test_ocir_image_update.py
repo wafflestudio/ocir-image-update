@@ -6,6 +6,8 @@ from unittest.mock import patch
 from ocir_image_update import (
     build_image_repository,
     CleanupSettings,
+    GitHubConfig,
+    GitHubContentsClient,
     load_github_app_private_key,
     load_cleanup_settings,
     load_github_config,
@@ -128,6 +130,62 @@ containers:
 
         self.assertEqual(replacements, 1)
         self.assertEqual(updated, 'image: "yny.ocir.io/namespace/dev/api:latest"\n')
+
+    def test_finds_candidate_yaml_files_via_code_search(self):
+        client = GitHubContentsClient(
+            GitHubConfig(
+                token="token",
+                owner="wafflestudio",
+                repo="waffle-world-oci",
+                api_url="https://api.github.com",
+                branch="main",
+                commit_name="bot",
+                commit_email="bot@example.com",
+                commit_message_template="msg",
+                timeout_seconds=10,
+            )
+        )
+
+        with patch.object(
+            client,
+            "_search_code_paths",
+            return_value=["argocd/snutt-prod/snutt-ev.yaml"],
+        ) as mocked_search:
+            candidates = client.find_candidate_yaml_files("argocd", "yny.ocir.io/ax1dvc8vmenm/snutt-prod/snutt-ev")
+
+        self.assertEqual(candidates, ["argocd/snutt-prod/snutt-ev.yaml"])
+        mocked_search.assert_called_once()
+
+    def test_finds_candidate_yaml_files_via_git_tree_fallback(self):
+        client = GitHubContentsClient(
+            GitHubConfig(
+                token="token",
+                owner="wafflestudio",
+                repo="waffle-world-oci",
+                api_url="https://api.github.com",
+                branch="main",
+                commit_name="bot",
+                commit_email="bot@example.com",
+                commit_message_template="msg",
+                timeout_seconds=10,
+            )
+        )
+
+        with patch.object(client, "_search_code_paths", return_value=None):
+            with patch.object(
+                client,
+                "list_yaml_files_recursive",
+                return_value=["argocd/snutt-prod/snutt-ev.yaml", "argocd/snutt-dev/snutt-ev.yaml"],
+            ) as mocked_list:
+                candidates = client.find_candidate_yaml_files(
+                    "argocd", "yny.ocir.io/ax1dvc8vmenm/snutt-prod/snutt-ev"
+                )
+
+        self.assertEqual(
+            candidates,
+            ["argocd/snutt-prod/snutt-ev.yaml", "argocd/snutt-dev/snutt-ev.yaml"],
+        )
+        mocked_list.assert_called_once_with("argocd")
 
 
 class SecretResolutionTests(unittest.TestCase):

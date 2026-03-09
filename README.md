@@ -11,7 +11,8 @@ manifests in `wafflestudio/waffle-world-oci` on the `main` branch.
 3. It maps `ax1dvc8vmenm/snutt-dev/snutt-ev` to:
    - image repository: `yny.ocir.io/ax1dvc8vmenm/snutt-dev/snutt-ev`
    - manifest scan root: `argocd`
-4. It scans YAML files under that root recursively.
+4. It finds candidate YAML files with GitHub code search and falls back to a
+   single recursive Git tree listing when search is unavailable.
 5. It replaces matching `image: ...:<old-tag>` lines.
 6. It commits the changes directly to `wafflestudio/waffle-world-oci@main`.
 
