@@ -44,11 +44,9 @@ jobs:
           docker build \
             --file ./Dockerfile \
             --tag "${{ steps.meta.outputs.image_ref }}:${{ steps.meta.outputs.image_tag }}" \
-            --tag "${{ steps.meta.outputs.image_ref }}:latest" \
             .
 
-      - name: Push image tags
+      - name: Push image tag
         shell: bash
         run: |
           docker push "${{ steps.meta.outputs.image_ref }}:${{ steps.meta.outputs.image_tag }}"
-          docker push "${{ steps.meta.outputs.image_ref }}:latest"

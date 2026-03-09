@@ -162,7 +162,6 @@ OCIR_AUTH_TOKEN=<OCI auth token>
 The workflow pushes:
 
 - `yny.ocir.io/ax1dvc8vmenm/ocir-image-update:<12-char git sha>`
-- `yny.ocir.io/ax1dvc8vmenm/ocir-image-update:latest`
 
 ## Reference docs
 
