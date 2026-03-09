@@ -8,12 +8,16 @@ manifests in `wafflestudio/waffle-world-oci` on the `main` branch.
 
 1. OCI Events routes the OCIR push event to this function.
 2. The function reads `data.additionalDetails.path` and `data.resourceName`.
-3. It maps `namespace/dev/api` to:
-   - image repository: `yny.ocir.io/namespace/dev/api`
-   - manifest directory: `argocd/dev`
+3. It maps `namespace/snutt-dev/snutt-ev` to:
+   - image repository: `yny.ocir.io/namespace/snutt-dev/snutt-ev`
+   - manifest directory: `argocd/snutt-dev`
 4. It scans YAML files in that directory.
 5. It replaces matching `image: ...:<old-tag>` lines.
 6. It commits the changes directly to `wafflestudio/waffle-world-oci@main`.
+
+In `waffle-world-oci`, environment is encoded in the repository path itself
+(`snutt-dev/...`, `snutt-prod/...`, `siksha-dev/...`, and so on), so the
+function intentionally scans a single `argocd/<app-env>` directory per push.
 
 ## Defaults
 
@@ -47,6 +51,7 @@ Runtime settings:
 MANIFEST_SCAN_ROOT=argocd
 OCIR_REGISTRY=yny.ocir.io
 OCIR_NAMESPACE=<tenancy-namespace>
+OCIR_CLEANUP_RETAIN_COUNT=3
 ```
 
 Optional:
@@ -62,6 +67,7 @@ HTTP_TIMEOUT_SECONDS=10
 GITHUB_TOKEN_SECRET_OCID=<vault secret ocid>
 GITHUB_APP_ID_SECRET_OCID=<vault secret ocid>
 GITHUB_APP_PRIVATE_KEY=<pem with \n escapes>
+OCIR_CLEANUP_RETAIN_COUNT=3
 ```
 
 If both a plain env var and a `*_SECRET_OCID` are set, the plain env var wins.
@@ -70,6 +76,10 @@ If `GITHUB_APP_PRIVATE_KEY_SECRET_OCID` is omitted, the code defaults to:
 ```text
 ocid1.vaultsecret.oc1.ap-chuncheon-1.amaaaaaat2m5lbqa2sn77mucconq5hgglwa7gflf6fx5rbt5lh3jbnrqavtq
 ```
+
+If `OCIR_CLEANUP_RETAIN_COUNT` is greater than zero, the function also lists
+images in the pushed repository and deletes all but the latest N unique image
+digests. The default is `3`. Set `OCIR_CLEANUP_RETAIN_COUNT=0` to disable this.
 
 ## Deploy
 
@@ -125,6 +135,7 @@ Example policy:
 
 ```text
 Allow dynamic-group <functions-dynamic-group> to read secret-family in compartment <compartment-name>
+Allow dynamic-group <functions-dynamic-group> to manage repos in compartment <compartment-name>
 ```
 
 If the secret uses a customer-managed key, the function may also need key usage
