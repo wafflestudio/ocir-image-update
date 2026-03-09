@@ -2,6 +2,7 @@ import io
 import json
 import logging
 import time
+import traceback
 
 from fdk import response
 
@@ -50,9 +51,9 @@ def handler(ctx, data: io.BytesIO = None):
             duration_ms=int((time.time() - started_at) * 1000),
             error_type=type(exc).__name__,
             reason=str(exc),
+            traceback=traceback.format_exc(),
             **invocation_fields,
         )
-        logging.exception("Configuration or manifest update failure")
     except Exception as exc:  # pragma: no cover
         status_code = 500
         result = {"status": "error", "reason": f"Unhandled error: {exc}"}
@@ -62,9 +63,9 @@ def handler(ctx, data: io.BytesIO = None):
             duration_ms=int((time.time() - started_at) * 1000),
             error_type=type(exc).__name__,
             reason=str(exc),
+            traceback=traceback.format_exc(),
             **invocation_fields,
         )
-        logging.exception("Unhandled failure while processing event")
     else:
         emit_log(
             logging.INFO,

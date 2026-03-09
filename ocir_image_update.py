@@ -22,6 +22,7 @@ DEFAULT_TIMEOUT_SECONDS = 10
 DEFAULT_GITHUB_OWNER = "wafflestudio"
 DEFAULT_GITHUB_REPO = "waffle-world-oci"
 DEFAULT_GITHUB_BRANCH = "main"
+DEFAULT_GITHUB_APP_ID = "2842871"
 DEFAULT_GITHUB_COMMIT_MESSAGE = "build: update {repository_path} to {tag}"
 DEFAULT_GITHUB_APP_PRIVATE_KEY_SECRET_OCID = (
     "ocid1.vaultsecret.oc1.ap-chuncheon-1.amaaaaaat2m5lbqa2sn77mucconq5hgglwa7gflf6fx5rbt5lh3jbnrqavtq"
@@ -298,17 +299,13 @@ def load_github_config() -> GitHubConfig:
     commit_message_template = os.getenv("GITHUB_COMMIT_MESSAGE", DEFAULT_GITHUB_COMMIT_MESSAGE)
     timeout_seconds = int(os.getenv("HTTP_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS)))
 
-    token = resolve_config_value("GITHUB_TOKEN")
-    auth_mode = "token"
-    if not token:
-        token = generate_github_app_installation_token(owner, repo, api_url, timeout_seconds)
-        auth_mode = "github_app"
+    token = generate_github_app_installation_token(owner, repo, api_url, timeout_seconds)
 
     emit_log(
         logging.INFO,
         "github.config_loaded",
         api_url=api_url,
-        auth_mode=auth_mode,
+        auth_mode="github_app",
         branch=branch,
         owner=owner,
         repo=repo,
@@ -349,12 +346,8 @@ def generate_github_app_installation_token(
     api_url: str,
     timeout_seconds: int,
 ) -> str:
-    app_id = resolve_config_value("GITHUB_APP_ID")
-    if not app_id:
-        raise ConfigError("Set GITHUB_TOKEN or GITHUB_APP_ID with a private key")
-
     private_key = load_github_app_private_key()
-    jwt_token = build_github_app_jwt(app_id, private_key)
+    jwt_token = build_github_app_jwt(DEFAULT_GITHUB_APP_ID, private_key)
     headers = {
         "Accept": "application/vnd.github+json",
         "Authorization": f"Bearer {jwt_token}",

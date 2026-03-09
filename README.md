@@ -35,14 +35,7 @@ GITHUB_COMMIT_MESSAGE=build: update {repository_path} to {tag}
 GitHub authentication:
 
 ```text
-GITHUB_APP_ID=<github app id>
 GITHUB_APP_PRIVATE_KEY_SECRET_OCID=<vault secret ocid>
-```
-
-Or for local testing:
-
-```text
-GITHUB_TOKEN=<github token with Contents:write>
 ```
 
 Runtime settings:
@@ -64,8 +57,6 @@ GITHUB_COMMIT_NAME=ocir-image-updater
 GITHUB_COMMIT_EMAIL=ocir-image-updater@example.com
 GITHUB_COMMIT_MESSAGE=build: update {repository_path} to {tag}
 HTTP_TIMEOUT_SECONDS=10
-GITHUB_TOKEN_SECRET_OCID=<vault secret ocid>
-GITHUB_APP_ID_SECRET_OCID=<vault secret ocid>
 GITHUB_APP_PRIVATE_KEY=<pem with \n escapes>
 OCIR_CLEANUP_RETAIN_COUNT=3
 ```
@@ -76,6 +67,8 @@ If `GITHUB_APP_PRIVATE_KEY_SECRET_OCID` is omitted, the code defaults to:
 ```text
 ocid1.vaultsecret.oc1.ap-chuncheon-1.amaaaaaat2m5lbqa2sn77mucconq5hgglwa7gflf6fx5rbt5lh3jbnrqavtq
 ```
+
+The GitHub App ID is hardcoded in the function as `2842871`.
 
 If `OCIR_CLEANUP_RETAIN_COUNT` is greater than zero, the function also lists
 images in the pushed repository and deletes all but the latest N unique image
@@ -93,7 +86,6 @@ fn -v deploy --app <your-functions-app>
 Recommended config for production:
 
 ```bash
-fn config function <your-functions-app> ocir-image-update GITHUB_APP_ID 2842871
 fn config function <your-functions-app> ocir-image-update MANIFEST_SCAN_ROOT argocd
 fn config function <your-functions-app> ocir-image-update OCIR_REGISTRY yny.ocir.io
 fn config function <your-functions-app> ocir-image-update OCIR_NAMESPACE <tenancy-namespace>

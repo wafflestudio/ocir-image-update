@@ -139,29 +139,6 @@ containers:
 
 
 class SecretResolutionTests(unittest.TestCase):
-    def test_prefers_plain_env_over_vault(self):
-        with patch.dict(
-            "os.environ",
-            {
-                "GITHUB_TOKEN": "direct-token",
-                "GITHUB_TOKEN_SECRET_OCID": "ocid1.secret.oc1..example",
-            },
-            clear=True,
-        ):
-            with patch("ocir_image_update.fetch_vault_secret") as mocked_fetch:
-                self.assertEqual(resolve_config_value("GITHUB_TOKEN"), "direct-token")
-                mocked_fetch.assert_not_called()
-
-    def test_reads_vault_secret_when_plain_env_missing(self):
-        with patch.dict(
-            "os.environ",
-            {"GITHUB_TOKEN_SECRET_OCID": "ocid1.secret.oc1..example"},
-            clear=True,
-        ):
-            with patch("ocir_image_update.fetch_vault_secret", return_value="vault-token") as mocked_fetch:
-                self.assertEqual(resolve_config_value("GITHUB_TOKEN"), "vault-token")
-                mocked_fetch.assert_called_once_with("ocid1.secret.oc1..example")
-
     def test_private_key_secret_is_normalized_for_pem(self):
         with patch.dict(
             "os.environ",
@@ -192,11 +169,53 @@ class SecretResolutionTests(unittest.TestCase):
                 )
 
     def test_github_repo_defaults_to_waffle_world_oci(self):
-        with patch.dict("os.environ", {"GITHUB_TOKEN": "direct-token"}, clear=True):
-            config = load_github_config()
-            self.assertEqual(config.owner, "wafflestudio")
-            self.assertEqual(config.repo, "waffle-world-oci")
-            self.assertEqual(config.branch, "main")
+        with patch.dict("os.environ", {}, clear=True):
+            with patch("ocir_image_update.generate_github_app_installation_token", return_value="installation-token"):
+                config = load_github_config()
+                self.assertEqual(config.owner, "wafflestudio")
+                self.assertEqual(config.repo, "waffle-world-oci")
+                self.assertEqual(config.branch, "main")
+                self.assertEqual(config.token, "installation-token")
+
+    def test_resolve_config_value_prefers_plain_env(self):
+        with patch.dict(
+            "os.environ",
+            {"SAMPLE_VALUE": "direct-value", "SAMPLE_VALUE_SECRET_OCID": "ocid1.secret.oc1..example"},
+            clear=True,
+        ):
+            with patch("ocir_image_update.fetch_vault_secret") as mocked_fetch:
+                self.assertEqual(resolve_config_value("SAMPLE_VALUE"), "direct-value")
+                mocked_fetch.assert_not_called()
+
+    def test_resolve_config_value_reads_vault_when_plain_env_missing(self):
+        with patch.dict(
+            "os.environ",
+            {"SAMPLE_VALUE_SECRET_OCID": "ocid1.secret.oc1..example"},
+            clear=True,
+        ):
+            with patch("ocir_image_update.fetch_vault_secret", return_value="vault-value") as mocked_fetch:
+                self.assertEqual(resolve_config_value("SAMPLE_VALUE"), "vault-value")
+                mocked_fetch.assert_called_once_with("ocid1.secret.oc1..example")
+
+    def test_load_github_config_uses_hardcoded_app_id(self):
+        with patch.dict("os.environ", {}, clear=True):
+            with patch("ocir_image_update.load_github_app_private_key", return_value="pem"):
+                with patch("ocir_image_update.build_github_app_jwt", return_value="jwt") as mocked_jwt:
+                    with patch("ocir_image_update.requests.get") as mocked_get:
+                        with patch("ocir_image_update.requests.post") as mocked_post:
+                            mocked_get.return_value = SimpleNamespace(
+                                json=lambda: {"id": 123},
+                                raise_for_status=lambda: None,
+                                status_code=200,
+                            )
+                            mocked_post.return_value = SimpleNamespace(
+                                json=lambda: {"token": "installation-token"},
+                                raise_for_status=lambda: None,
+                                status_code=201,
+                            )
+                            config = load_github_config()
+        self.assertEqual(config.token, "installation-token")
+        mocked_jwt.assert_called_once_with("2842871", "pem")
 
 
 class CleanupTests(unittest.TestCase):
