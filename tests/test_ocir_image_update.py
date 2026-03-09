@@ -139,8 +139,6 @@ containers:
                 repo="waffle-world-oci",
                 api_url="https://api.github.com",
                 branch="main",
-                commit_name="bot",
-                commit_email="bot@example.com",
                 commit_message_template="msg",
                 timeout_seconds=10,
             )
@@ -164,8 +162,6 @@ containers:
                 repo="waffle-world-oci",
                 api_url="https://api.github.com",
                 branch="main",
-                commit_name="bot",
-                commit_email="bot@example.com",
                 commit_message_template="msg",
                 timeout_seconds=10,
             )

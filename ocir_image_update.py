@@ -63,8 +63,6 @@ class GitHubConfig:
     repo: str
     api_url: str
     branch: str
-    commit_name: str
-    commit_email: str
     commit_message_template: str
     timeout_seconds: int
 
@@ -282,8 +280,6 @@ def load_github_config() -> GitHubConfig:
     repo = os.getenv("GITHUB_REPO", DEFAULT_GITHUB_REPO)
     api_url = os.getenv("GITHUB_API_URL", "https://api.github.com").rstrip("/")
     branch = os.getenv("GITHUB_BRANCH", DEFAULT_GITHUB_BRANCH)
-    commit_name = os.getenv("GITHUB_COMMIT_NAME", "ocir-image-updater")
-    commit_email = os.getenv("GITHUB_COMMIT_EMAIL", "ocir-image-updater@example.com")
     commit_message_template = os.getenv("GITHUB_COMMIT_MESSAGE", DEFAULT_GITHUB_COMMIT_MESSAGE)
     timeout_seconds = int(os.getenv("HTTP_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS)))
 
@@ -306,8 +302,6 @@ def load_github_config() -> GitHubConfig:
         repo=repo,
         api_url=api_url,
         branch=branch,
-        commit_name=commit_name,
-        commit_email=commit_email,
         commit_message_template=commit_message_template,
         timeout_seconds=timeout_seconds,
     )
@@ -867,14 +861,6 @@ class GitHubContentsClient:
             "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
             "sha": sha,
             "branch": self.config.branch,
-            "committer": {
-                "name": self.config.commit_name,
-                "email": self.config.commit_email,
-            },
-            "author": {
-                "name": self.config.commit_name,
-                "email": self.config.commit_email,
-            },
         }
         response = self.session.put(
             self._contents_url(path),
