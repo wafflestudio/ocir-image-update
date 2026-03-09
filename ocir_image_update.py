@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import posixpath
@@ -69,17 +70,61 @@ class UpdateTarget:
     manifest_directory: str
 
 
+def emit_log(level: int, event: str, **fields: Any) -> None:
+    record = {"event": event}
+    for key, value in fields.items():
+        if value is not None:
+            record[key] = value
+    LOG.log(level, json.dumps(record, sort_keys=True, default=str))
+
+
+def summarize_event_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    data = payload.get("data") or {}
+    details = data.get("additionalDetails") or {}
+    return {
+        "event_id": payload.get("eventID") or payload.get("eventId") or payload.get("id"),
+        "event_time": payload.get("eventTime"),
+        "event_type": payload.get("eventType"),
+        "repository_path": details.get("path"),
+        "resource_name": data.get("resourceName"),
+        "source": payload.get("source"),
+    }
+
+
 def process_event(payload: dict[str, Any]) -> dict[str, Any]:
     event = parse_ocir_push_event(payload)
+    emit_log(
+        logging.INFO,
+        "event.accepted",
+        digest=event.digest,
+        repository_path=event.repository_path,
+        resource_name=event.resource_name,
+        tag=event.tag,
+    )
     github_config = load_github_config()
     target = load_update_target(event)
     client = GitHubContentsClient(github_config)
+    emit_log(
+        logging.INFO,
+        "manifest.target_resolved",
+        branch=github_config.branch,
+        image_repository=target.image_repository,
+        manifest_directory=target.manifest_directory,
+        ocir_repository=target.ocir_repository,
+    )
 
     try:
         file_paths = client.list_yaml_files(target.manifest_directory)
     except requests.HTTPError as exc:
         if exc.response is None or exc.response.status_code != 404:
             raise
+        emit_log(
+            logging.INFO,
+            "manifest.directory_missing",
+            branch=github_config.branch,
+            manifest_directory=target.manifest_directory,
+            repository_path=event.repository_path,
+        )
         return {
             "status": "ignored",
             "branch": github_config.branch,
@@ -88,6 +133,13 @@ def process_event(payload: dict[str, Any]) -> dict[str, Any]:
             "reason": "No matching manifest directory",
         }
 
+    emit_log(
+        logging.INFO,
+        "manifest.files_listed",
+        branch=github_config.branch,
+        file_count=len(file_paths),
+        manifest_directory=target.manifest_directory,
+    )
     updated_files: list[dict[str, str]] = []
 
     for file_path in file_paths:
@@ -107,7 +159,7 @@ def process_event(payload: dict[str, Any]) -> dict[str, Any]:
         if updated is not None:
             updated_files.append(updated)
 
-    return {
+    result = {
         "status": "updated" if updated_files else "noop",
         "branch": github_config.branch,
         "manifest_directory": target.manifest_directory,
@@ -117,6 +169,17 @@ def process_event(payload: dict[str, Any]) -> dict[str, Any]:
         "tag": event.tag,
         "updated_files": updated_files,
     }
+    emit_log(
+        logging.INFO,
+        "manifest.update_complete",
+        branch=result["branch"],
+        manifest_directory=result["manifest_directory"],
+        repository_path=result["repository_path"],
+        status=result["status"],
+        tag=result["tag"],
+        updated_file_count=len(updated_files),
+    )
+    return result
 
 
 def update_manifest_file(
@@ -129,6 +192,13 @@ def update_manifest_file(
     current_content, current_sha = client.get_file(file_path)
     updated_content, replacements = replace_image_tag_in_text(current_content, image_repository, tag)
     if replacements == 0:
+        emit_log(
+            logging.INFO,
+            "manifest.file_skipped",
+            image_repository=image_repository,
+            path=file_path,
+            reason="image_reference_not_found",
+        )
         return None
 
     try:
@@ -137,13 +207,27 @@ def update_manifest_file(
         if exc.response is None or exc.response.status_code != 409:
             raise
 
-        LOG.warning("GitHub contents update conflicted for %s, retrying once", file_path)
+        emit_log(logging.WARNING, "manifest.file_conflict_retry", path=file_path)
         current_content, current_sha = client.get_file(file_path)
         updated_content, replacements = replace_image_tag_in_text(current_content, image_repository, tag)
         if replacements == 0:
+            emit_log(
+                logging.INFO,
+                "manifest.file_skipped",
+                image_repository=image_repository,
+                path=file_path,
+                reason="image_reference_not_found_after_retry",
+            )
             return None
         commit_sha = client.update_file(file_path, current_sha, updated_content, commit_message)
 
+    emit_log(
+        logging.INFO,
+        "manifest.file_updated",
+        commit_sha=commit_sha,
+        path=file_path,
+        replacements=replacements,
+    )
     return {"path": file_path, "commit_sha": commit_sha}
 
 
@@ -193,8 +277,21 @@ def load_github_config() -> GitHubConfig:
     timeout_seconds = int(os.getenv("HTTP_TIMEOUT_SECONDS", str(DEFAULT_TIMEOUT_SECONDS)))
 
     token = resolve_config_value("GITHUB_TOKEN")
+    auth_mode = "token"
     if not token:
         token = generate_github_app_installation_token(owner, repo, api_url, timeout_seconds)
+        auth_mode = "github_app"
+
+    emit_log(
+        logging.INFO,
+        "github.config_loaded",
+        api_url=api_url,
+        auth_mode=auth_mode,
+        branch=branch,
+        owner=owner,
+        repo=repo,
+        timeout_seconds=timeout_seconds,
+    )
 
     return GitHubConfig(
         token=token,
@@ -254,6 +351,13 @@ def generate_github_app_installation_token(
         f"Unable to resolve GitHub App installation for {owner}/{repo}",
     )
     installation_id = installation_response.json()["id"]
+    emit_log(
+        logging.INFO,
+        "github.app_installation_resolved",
+        installation_id=installation_id,
+        owner=owner,
+        repo=repo,
+    )
 
     token_response = requests.post(
         f"{api_url}/app/installations/{installation_id}/access_tokens",
@@ -265,6 +369,7 @@ def generate_github_app_installation_token(
         token_response,
         f"Unable to create GitHub App installation token for {owner}/{repo}",
     )
+    emit_log(logging.INFO, "github.app_token_created", owner=owner, repo=repo)
     return token_response.json()["token"]
 
 

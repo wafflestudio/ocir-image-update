@@ -86,6 +86,22 @@ fn config function <your-functions-app> ocir-image-update OCIR_REGISTRY yny.ocir
 fn config function <your-functions-app> ocir-image-update OCIR_NAMESPACE <tenancy-namespace>
 ```
 
+## Logging
+
+The function emits one-line JSON application logs to stdout/stderr. Once
+Function Invocation Logs are enabled in OCI Logging, you can filter by fields
+such as `event`, `repository_path`, `tag`, `status_code`, and
+`updated_file_count`.
+
+Typical log events:
+
+- `invocation.started`
+- `event.accepted`
+- `github.config_loaded`
+- `manifest.file_updated`
+- `manifest.update_complete`
+- `invocation.completed`
+
 ## OCI Events rule
 
 Broad rule:

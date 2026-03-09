@@ -11,6 +11,7 @@ from ocir_image_update import (
     replace_image_tag_in_text,
     resolve_config_value,
     strip_ocir_namespace,
+    summarize_event_payload,
 )
 
 
@@ -34,6 +35,27 @@ class ParseEventTests(unittest.TestCase):
         self.assertEqual(event.resource_name, "team/api:1.2.3")
         self.assertEqual(event.tag, "1.2.3")
         self.assertEqual(event.digest, "sha256:deadbeef")
+
+    def test_summarizes_event_payload_for_logging(self):
+        summary = summarize_event_payload(
+            {
+                "eventType": "com.oraclecloud.artifacts.uploaddockerimage",
+                "eventTime": "2026-03-09T00:00:00Z",
+                "eventID": "event-123",
+                "source": "OCIRegistry",
+                "data": {
+                    "resourceName": "team/api:1.2.3",
+                    "additionalDetails": {"path": "namespace/team/api"},
+                },
+            }
+        )
+
+        self.assertEqual(summary["event_id"], "event-123")
+        self.assertEqual(summary["event_time"], "2026-03-09T00:00:00Z")
+        self.assertEqual(summary["event_type"], "com.oraclecloud.artifacts.uploaddockerimage")
+        self.assertEqual(summary["repository_path"], "namespace/team/api")
+        self.assertEqual(summary["resource_name"], "team/api:1.2.3")
+        self.assertEqual(summary["source"], "OCIRegistry")
 
 
 class DirectoryScanTests(unittest.TestCase):
