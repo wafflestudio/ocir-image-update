@@ -1,0 +1,19 @@
+{
+  "eventType": "com.oraclecloud.artifacts.uploaddockerimage",
+  "cloudEventsVersion": "0.1",
+  "eventTypeVersion": "2.0",
+  "source": "OCIRegistry",
+  "eventTime": "2026-03-09T00:00:00.000Z",
+  "contentType": "application/json",
+  "data": {
+    "compartmentId": "ocid1.compartment.oc1..example",
+    "compartmentName": "example",
+    "resourceName": "team/api:1.2.3",
+    "resourceId": "ocid1.containerimage.oc1.iad.example",
+    "availabilityDomain": "all",
+    "additionalDetails": {
+      "path": "namespace/team/api",
+      "digest": "sha256:0123456789abcdef"
+    }
+  }
+}
