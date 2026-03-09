@@ -73,6 +73,9 @@ ocid1.vaultsecret.oc1.ap-chuncheon-1.amaaaaaat2m5lbqa2sn77mucconq5hgglwa7gflf6fx
 
 ## Deploy
 
+This project uses a custom `Dockerfile`, so `func.yaml` is set to
+`runtime: docker` and the image's `ENTRYPOINT` is taken from the Dockerfile.
+
 ```bash
 fn -v deploy --app <your-functions-app>
 ```
@@ -137,6 +140,8 @@ nix develop -c python -m unittest discover -s tests
 
 The workflow at `.github/workflows/build-and-push-ocir.yml` builds this project
 into a container image and pushes it to OCIR on every push to `main`.
+It uses plain `docker build` on `ubuntu-latest`, so the output is a single
+`linux/amd64` image rather than a multi-platform buildx manifest.
 
 Default image repository:
 

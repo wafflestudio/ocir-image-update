@@ -22,8 +22,13 @@ WORKDIR /function
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/function:/python
 
 COPY --from=build /python /python
 COPY --from=build /function /function
+
+RUN groupadd --gid 1000 fn \
+    && useradd --uid 1000 --gid fn --create-home --shell /usr/sbin/nologin fn \
+    && chmod -R o+rX /python /function
 
 ENTRYPOINT ["/python/bin/fdk", "/function/func.py", "handler"]
