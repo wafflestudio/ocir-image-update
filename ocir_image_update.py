@@ -538,23 +538,7 @@ def cleanup_pushed_repository_images(
             "status": "noop",
         }
 
-    if not any(image.digest == event.digest for image in images):
-        emit_log(
-            logging.WARNING,
-            "ocir.cleanup_skipped",
-            current_digest=event.digest,
-            ocir_repository=ocir_repository,
-            reason="current_digest_not_visible_yet",
-            retain_count=settings.retain_count,
-        )
-        return {
-            "status": "skipped",
-            "reason": "The pushed digest is not visible in OCIR yet",
-            "retain_count": settings.retain_count,
-            "repository_id": repository.id,
-        }
-
-    protected_digests = {event.digest}
+    protected_digests = {event.digest} if event.digest else None
     images_to_delete = select_images_to_delete(images, settings.retain_count, protected_digests)
     if not images_to_delete:
         emit_log(
