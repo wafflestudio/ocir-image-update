@@ -10,14 +10,14 @@ manifests in `wafflestudio/waffle-world-oci` on the `main` branch.
 2. The function reads `data.additionalDetails.path` and `data.resourceName`.
 3. It maps `namespace/snutt-dev/snutt-ev` to:
    - image repository: `yny.ocir.io/namespace/snutt-dev/snutt-ev`
-   - manifest directory: `argocd/snutt-dev`
-4. It scans YAML files in that directory.
+   - manifest scan root: `argocd`
+4. It scans YAML files under that root recursively.
 5. It replaces matching `image: ...:<old-tag>` lines.
 6. It commits the changes directly to `wafflestudio/waffle-world-oci@main`.
 
-In `waffle-world-oci`, environment is encoded in the repository path itself
-(`snutt-dev/...`, `snutt-prod/...`, `siksha-dev/...`, and so on), so the
-function intentionally scans a single `argocd/<app-env>` directory per push.
+This avoids coupling the updater to Argo CD directory names. If the same image
+appears in multiple app or environment directories, every matching manifest
+under `argocd/` is updated.
 
 ## Defaults
 

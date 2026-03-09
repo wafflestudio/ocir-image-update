@@ -4,7 +4,6 @@ import base64
 import json
 import logging
 import os
-import posixpath
 import re
 import time
 from dataclasses import dataclass
@@ -69,7 +68,7 @@ class GitHubConfig:
 class UpdateTarget:
     ocir_repository: str
     image_repository: str
-    manifest_directory: str
+    manifest_root: str
 
 
 @dataclass(frozen=True)
@@ -125,14 +124,14 @@ def process_event(payload: dict[str, Any]) -> dict[str, Any]:
         "manifest.target_resolved",
         branch=github_config.branch,
         image_repository=target.image_repository,
-        manifest_directory=target.manifest_directory,
+        manifest_root=target.manifest_root,
         ocir_repository=target.ocir_repository,
     )
 
     manifest_directory_missing = False
 
     try:
-        file_paths = client.list_yaml_files(target.manifest_directory)
+        file_paths = client.list_yaml_files_recursive(target.manifest_root)
     except requests.HTTPError as exc:
         if exc.response is None or exc.response.status_code != 404:
             raise
@@ -141,7 +140,7 @@ def process_event(payload: dict[str, Any]) -> dict[str, Any]:
             logging.INFO,
             "manifest.directory_missing",
             branch=github_config.branch,
-            manifest_directory=target.manifest_directory,
+            manifest_root=target.manifest_root,
             repository_path=event.repository_path,
         )
         file_paths = []
@@ -153,7 +152,7 @@ def process_event(payload: dict[str, Any]) -> dict[str, Any]:
             "manifest.files_listed",
             branch=github_config.branch,
             file_count=len(file_paths),
-            manifest_directory=target.manifest_directory,
+            manifest_root=target.manifest_root,
         )
 
         for file_path in file_paths:
@@ -176,7 +175,7 @@ def process_event(payload: dict[str, Any]) -> dict[str, Any]:
     result = {
         "status": "ignored" if manifest_directory_missing else ("updated" if updated_files else "noop"),
         "branch": github_config.branch,
-        "manifest_directory": target.manifest_directory,
+        "manifest_root": target.manifest_root,
         "repository_path": event.repository_path,
         "ocir_repository": target.ocir_repository,
         "image_repository": target.image_repository,
@@ -194,7 +193,7 @@ def process_event(payload: dict[str, Any]) -> dict[str, Any]:
         logging.INFO,
         "manifest.update_complete",
         branch=result["branch"],
-        manifest_directory=result["manifest_directory"],
+        manifest_root=result["manifest_root"],
         repository_path=result["repository_path"],
         status=result["status"],
         tag=result["tag"],
@@ -335,13 +334,12 @@ def load_update_target(event: ImagePushEvent) -> UpdateTarget:
     ocir_namespace = os.getenv("OCIR_NAMESPACE", "").strip("/")
 
     ocir_repository = strip_ocir_namespace(event.repository_path, ocir_namespace)
-    manifest_directory = derive_manifest_directory(ocir_repository, manifest_scan_root)
     image_repository = build_image_repository(ocir_registry, event.repository_path, ocir_namespace)
 
     return UpdateTarget(
         ocir_repository=ocir_repository,
         image_repository=image_repository,
-        manifest_directory=manifest_directory,
+        manifest_root=manifest_scan_root,
     )
 
 
@@ -465,13 +463,6 @@ def strip_ocir_namespace(repository_path: str, ocir_namespace: str) -> str:
     if normalized_path.startswith(prefix):
         return normalized_path[len(prefix) :]
     return normalized_path
-
-
-def derive_manifest_directory(ocir_repository: str, manifest_scan_root: str) -> str:
-    repository_directory = posixpath.dirname(ocir_repository)
-    if repository_directory in ("", "."):
-        return manifest_scan_root
-    return posixpath.join(manifest_scan_root, repository_directory)
 
 
 def build_image_repository(ocir_registry: str, repository_path: str, ocir_namespace: str) -> str:
@@ -817,23 +808,33 @@ class GitHubContentsClient:
 
         return base64.b64decode(encoded_content).decode("utf-8"), body["sha"]
 
-    def list_yaml_files(self, path: str) -> list[str]:
+    def list_yaml_files_recursive(self, path: str) -> list[str]:
+        pending_paths = [path]
+        yaml_files: list[str] = []
+
+        while pending_paths:
+            current_path = pending_paths.pop()
+            body = self._get_contents(current_path)
+            if not isinstance(body, list):
+                raise ManifestUpdateError(f"Expected {current_path} to be a GitHub directory listing")
+
+            for item in body:
+                item_type = item.get("type")
+                if item_type == "dir":
+                    pending_paths.append(item["path"])
+                elif item_type == "file" and item.get("name", "").endswith((".yaml", ".yml")):
+                    yaml_files.append(item["path"])
+
+        return sorted(yaml_files)
+
+    def _get_contents(self, path: str) -> Any:
         response = self.session.get(
             self._contents_url(path),
             params={"ref": self.config.branch},
             timeout=self.config.timeout_seconds,
         )
         self.raise_for_status(response, f"Unable to list directory {path} from branch {self.config.branch}")
-
-        body = response.json()
-        if not isinstance(body, list):
-            raise ManifestUpdateError(f"Expected {path} to be a GitHub directory listing")
-
-        return [
-            item["path"]
-            for item in body
-            if item.get("type") == "file" and item.get("name", "").endswith((".yaml", ".yml"))
-        ]
+        return response.json()
 
     def update_file(self, path: str, sha: str, content: str, message: str) -> str:
         payload = {

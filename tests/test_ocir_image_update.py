@@ -6,7 +6,6 @@ from unittest.mock import patch
 from ocir_image_update import (
     build_image_repository,
     CleanupSettings,
-    derive_manifest_directory,
     load_github_app_private_key,
     load_cleanup_settings,
     load_github_config,
@@ -72,10 +71,6 @@ class DirectoryScanTests(unittest.TestCase):
         self.assertEqual(strip_ocir_namespace("namespace/dev/api", "namespace"), "dev/api")
         self.assertEqual(strip_ocir_namespace("dev/api", "namespace"), "dev/api")
 
-    def test_derives_manifest_directory(self):
-        self.assertEqual(derive_manifest_directory("dev/api", "argocd"), "argocd/dev")
-        self.assertEqual(derive_manifest_directory("api", "argocd"), "argocd")
-
     def test_builds_image_repository(self):
         self.assertEqual(
             build_image_repository("yny.ocir.io", "namespace/dev/api", "namespace"),
@@ -111,7 +106,7 @@ class DirectoryScanTests(unittest.TestCase):
 
         self.assertEqual(target.ocir_repository, "dev/api")
         self.assertEqual(target.image_repository, "yny.ocir.io/namespace/dev/api")
-        self.assertEqual(target.manifest_directory, "argocd/dev")
+        self.assertEqual(target.manifest_root, "argocd")
 
     def test_replaces_matching_image_lines(self):
         original = """\
