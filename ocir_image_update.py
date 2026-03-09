@@ -24,6 +24,10 @@ DEFAULT_GITHUB_REPO = "waffle-world-oci"
 DEFAULT_GITHUB_BRANCH = "main"
 DEFAULT_GITHUB_APP_ID = "2842871"
 DEFAULT_GITHUB_COMMIT_MESSAGE = "build: update {repository_path} to {tag}"
+DEFAULT_MANIFEST_SCAN_ROOT = "argocd"
+DEFAULT_OCIR_REGISTRY = "yny.ocir.io"
+DEFAULT_OCIR_NAMESPACE = "ax1dvc8vmenm"
+DEFAULT_OCIR_CLEANUP_RETAIN_COUNT = 3
 DEFAULT_GITHUB_APP_PRIVATE_KEY_SECRET_OCID = (
     "ocid1.vaultsecret.oc1.ap-chuncheon-1.amaaaaaat2m5lbqa2sn77mucconq5hgglwa7gflf6fx5rbt5lh3jbnrqavtq"
 )
@@ -326,9 +330,9 @@ def load_github_config() -> GitHubConfig:
 
 
 def load_update_target(event: ImagePushEvent) -> UpdateTarget:
-    manifest_scan_root = required_env("MANIFEST_SCAN_ROOT").strip("/")
-    ocir_registry = required_env("OCIR_REGISTRY").rstrip("/")
-    ocir_namespace = os.getenv("OCIR_NAMESPACE", "").strip("/")
+    manifest_scan_root = os.getenv("MANIFEST_SCAN_ROOT", DEFAULT_MANIFEST_SCAN_ROOT).strip("/")
+    ocir_registry = os.getenv("OCIR_REGISTRY", DEFAULT_OCIR_REGISTRY).rstrip("/")
+    ocir_namespace = os.getenv("OCIR_NAMESPACE", DEFAULT_OCIR_NAMESPACE).strip("/")
 
     ocir_repository = strip_ocir_namespace(event.repository_path, ocir_namespace)
     image_repository = build_image_repository(ocir_registry, event.repository_path, ocir_namespace)
@@ -480,7 +484,7 @@ def replace_image_tag_in_text(content: str, image_repository: str, new_tag: str)
 
 
 def load_cleanup_settings() -> CleanupSettings | None:
-    raw_value = os.getenv("OCIR_CLEANUP_RETAIN_COUNT", "3").strip()
+    raw_value = os.getenv("OCIR_CLEANUP_RETAIN_COUNT", str(DEFAULT_OCIR_CLEANUP_RETAIN_COUNT)).strip()
     if not raw_value:
         return None
 
@@ -762,14 +766,6 @@ def select_images_to_delete(
             keep_ids.add(image.image_id)
 
     return [image for image in images if image.image_id not in keep_ids]
-
-
-def required_env(name: str) -> str:
-    value = os.getenv(name)
-    if not value:
-        raise ConfigError(f"Missing required environment variable: {name}")
-    return value
-
 
 class GitHubContentsClient:
     def __init__(self, config: GitHubConfig):

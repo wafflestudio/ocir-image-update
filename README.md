@@ -8,8 +8,8 @@ manifests in `wafflestudio/waffle-world-oci` on the `main` branch.
 
 1. OCI Events routes the OCIR push event to this function.
 2. The function reads `data.additionalDetails.path` and `data.resourceName`.
-3. It maps `namespace/snutt-dev/snutt-ev` to:
-   - image repository: `yny.ocir.io/namespace/snutt-dev/snutt-ev`
+3. It maps `ax1dvc8vmenm/snutt-dev/snutt-ev` to:
+   - image repository: `yny.ocir.io/ax1dvc8vmenm/snutt-dev/snutt-ev`
    - manifest scan root: `argocd`
 4. It scans YAML files under that root recursively.
 5. It replaces matching `image: ...:<old-tag>` lines.
@@ -28,24 +28,17 @@ GITHUB_OWNER=wafflestudio
 GITHUB_REPO=waffle-world-oci
 GITHUB_BRANCH=main
 GITHUB_COMMIT_MESSAGE=build: update {repository_path} to {tag}
+MANIFEST_SCAN_ROOT=argocd
+OCIR_REGISTRY=yny.ocir.io
+OCIR_NAMESPACE=ax1dvc8vmenm
+OCIR_CLEANUP_RETAIN_COUNT=3
 ```
 
 ## Required configuration
 
-GitHub authentication:
-
-```text
-GITHUB_APP_PRIVATE_KEY_SECRET_OCID=<vault secret ocid>
-```
-
-Runtime settings:
-
-```text
-MANIFEST_SCAN_ROOT=argocd
-OCIR_REGISTRY=yny.ocir.io
-OCIR_NAMESPACE=<tenancy-namespace>
-OCIR_CLEANUP_RETAIN_COUNT=3
-```
+None. The current deployment uses built-in defaults for GitHub target,
+manifest scan root, OCIR registry, OCIR namespace, cleanup retention count,
+GitHub App ID, and the Vault secret OCID for the GitHub App private key.
 
 Optional:
 
@@ -58,6 +51,9 @@ GITHUB_COMMIT_EMAIL=ocir-image-updater@example.com
 GITHUB_COMMIT_MESSAGE=build: update {repository_path} to {tag}
 HTTP_TIMEOUT_SECONDS=10
 GITHUB_APP_PRIVATE_KEY=<pem with \n escapes>
+MANIFEST_SCAN_ROOT=argocd
+OCIR_REGISTRY=yny.ocir.io
+OCIR_NAMESPACE=ax1dvc8vmenm
 OCIR_CLEANUP_RETAIN_COUNT=3
 ```
 
@@ -85,11 +81,12 @@ fn -v deploy --app <your-functions-app>
 
 Recommended config for production:
 
-```bash
-fn config function <your-functions-app> ocir-image-update MANIFEST_SCAN_ROOT argocd
-fn config function <your-functions-app> ocir-image-update OCIR_REGISTRY yny.ocir.io
-fn config function <your-functions-app> ocir-image-update OCIR_NAMESPACE <tenancy-namespace>
+```text
+No function config is required for the current deployment.
 ```
+
+Override only if you want to replace a built-in default such as the private key
+secret OCID or cleanup retention count.
 
 ## Logging
 

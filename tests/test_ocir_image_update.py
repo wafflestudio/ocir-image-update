@@ -81,31 +81,23 @@ class DirectoryScanTests(unittest.TestCase):
             "yny.ocir.io/namespace/dev/api",
         )
 
-    def test_loads_update_target(self):
+    def test_loads_update_target_from_built_in_defaults(self):
         event = parse_ocir_push_event(
             {
                 "eventType": "com.oraclecloud.artifacts.uploaddockerimage",
                 "data": {
                     "compartmentId": "ocid1.compartment.oc1..example",
                     "resourceName": "dev/api:2026-03-09",
-                    "additionalDetails": {"path": "namespace/dev/api"},
+                    "additionalDetails": {"path": "ax1dvc8vmenm/dev/api"},
                 },
             }
         )
 
-        with patch.dict(
-            "os.environ",
-            {
-                "MANIFEST_SCAN_ROOT": "argocd",
-                "OCIR_REGISTRY": "yny.ocir.io",
-                "OCIR_NAMESPACE": "namespace",
-            },
-            clear=True,
-        ):
+        with patch.dict("os.environ", {}, clear=True):
             target = load_update_target(event)
 
         self.assertEqual(target.ocir_repository, "dev/api")
-        self.assertEqual(target.image_repository, "yny.ocir.io/namespace/dev/api")
+        self.assertEqual(target.image_repository, "yny.ocir.io/ax1dvc8vmenm/dev/api")
         self.assertEqual(target.manifest_root, "argocd")
 
     def test_replaces_matching_image_lines(self):
