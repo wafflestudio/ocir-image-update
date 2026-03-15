@@ -183,6 +183,32 @@ containers:
         )
         mocked_list.assert_called_once_with("argocd")
 
+    def test_falls_back_to_git_tree_when_code_search_returns_empty_results(self):
+        client = GitHubContentsClient(
+            GitHubConfig(
+                token="token",
+                owner="wafflestudio",
+                repo="waffle-world-oci",
+                api_url="https://api.github.com",
+                branch="main",
+                commit_message_template="msg",
+                timeout_seconds=10,
+            )
+        )
+
+        with patch.object(client, "_search_code_paths", return_value=[]):
+            with patch.object(
+                client,
+                "list_yaml_files_recursive",
+                return_value=["argocd/snutt-dev/snutt-ev-batch.yaml"],
+            ) as mocked_list:
+                candidates = client.find_candidate_yaml_files(
+                    "argocd", "yny.ocir.io/ax1dvc8vmenm/snutt-dev/snutt-ev-batch"
+                )
+
+        self.assertEqual(candidates, ["argocd/snutt-dev/snutt-ev-batch.yaml"])
+        mocked_list.assert_called_once_with("argocd")
+
 
 class SecretResolutionTests(unittest.TestCase):
     def test_private_key_secret_is_normalized_for_pem(self):

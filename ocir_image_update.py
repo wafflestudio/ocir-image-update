@@ -762,7 +762,7 @@ class GitHubContentsClient:
     def find_candidate_yaml_files(self, path: str, image_repository: str) -> list[str]:
         query = f'"{image_repository}:" repo:{self.config.owner}/{self.config.repo} path:{path}'
         search_results = self._search_code_paths(query)
-        if search_results is not None:
+        if search_results:
             emit_log(
                 logging.INFO,
                 "manifest.candidates_resolved",
@@ -772,6 +772,15 @@ class GitHubContentsClient:
                 strategy="code_search",
             )
             return search_results
+        if search_results == []:
+            emit_log(
+                logging.WARNING,
+                "manifest.code_search_fallback",
+                image_repository=image_repository,
+                manifest_root=path,
+                query=query,
+                reason="empty_results",
+            )
 
         yaml_files = self.list_yaml_files_recursive(path)
         emit_log(
