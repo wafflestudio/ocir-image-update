@@ -209,6 +209,79 @@ containers:
         self.assertEqual(candidates, ["argocd/snutt-dev/snutt-ev-batch.yaml"])
         mocked_list.assert_called_once_with("argocd")
 
+    def test_code_search_retries_once_after_github_server_error(self):
+        client = GitHubContentsClient(
+            GitHubConfig(
+                token="token",
+                owner="wafflestudio",
+                repo="waffle-world-oci",
+                api_url="https://api.github.com",
+                branch="main",
+                commit_message_template="msg",
+                timeout_seconds=10,
+            )
+        )
+
+        query = '"yny.ocir.io/ax1dvc8vmenm/snutt-dev/snutt-ev:" repo:wafflestudio/waffle-world-oci path:argocd'
+        with patch.object(
+            client.session,
+            "get",
+            side_effect=[
+                SimpleNamespace(
+                    status_code=500,
+                    json=lambda: {"message": "internal server error"},
+                    text="internal server error",
+                ),
+                SimpleNamespace(
+                    status_code=200,
+                    json=lambda: {"items": [{"path": "argocd/snutt-dev/snutt-ev.yaml"}]},
+                    text="",
+                    raise_for_status=lambda: None,
+                ),
+            ],
+        ):
+            with patch("ocir_image_update.time.sleep") as mocked_sleep:
+                self.assertEqual(
+                    client._search_code_paths(query),
+                    ["argocd/snutt-dev/snutt-ev.yaml"],
+                )
+
+        mocked_sleep.assert_called_once()
+
+    def test_code_search_returns_none_after_retrying_github_server_error(self):
+        client = GitHubContentsClient(
+            GitHubConfig(
+                token="token",
+                owner="wafflestudio",
+                repo="waffle-world-oci",
+                api_url="https://api.github.com",
+                branch="main",
+                commit_message_template="msg",
+                timeout_seconds=10,
+            )
+        )
+
+        query = '"yny.ocir.io/ax1dvc8vmenm/snutt-dev/snutt-ev:" repo:wafflestudio/waffle-world-oci path:argocd'
+        with patch.object(
+            client.session,
+            "get",
+            side_effect=[
+                SimpleNamespace(
+                    status_code=500,
+                    json=lambda: {"message": "internal server error"},
+                    text="internal server error",
+                ),
+                SimpleNamespace(
+                    status_code=503,
+                    json=lambda: {"message": "service unavailable"},
+                    text="service unavailable",
+                ),
+            ],
+        ):
+            with patch("ocir_image_update.time.sleep") as mocked_sleep:
+                self.assertIsNone(client._search_code_paths(query))
+
+        mocked_sleep.assert_called_once()
 
 class SecretResolutionTests(unittest.TestCase):
     def test_private_key_secret_is_normalized_for_pem(self):

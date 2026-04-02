@@ -27,6 +27,7 @@ DEFAULT_GITHUB_COMMIT_MESSAGE = "build: update {repository_path} to {tag}"
 DEFAULT_MANIFEST_SCAN_ROOT = "argocd"
 DEFAULT_OCIR_REGISTRY = "yny.ocir.io"
 DEFAULT_OCIR_NAMESPACE = "ax1dvc8vmenm"
+DEFAULT_GITHUB_CODE_SEARCH_RETRY_DELAY_SECONDS = 0.2
 DEFAULT_OCIR_CLEANUP_RETAIN_COUNT = 3
 DEFAULT_GITHUB_APP_PRIVATE_KEY_SECRET_OCID = (
     "ocid1.vaultsecret.oc1.ap-chuncheon-1.amaaaaaat2m5lbqa2sn77mucconq5hgglwa7gflf6fx5rbt5lh3jbnrqavtq"
@@ -827,7 +828,21 @@ class GitHubContentsClient:
             params={"q": query, "per_page": 100},
             timeout=self.config.timeout_seconds,
         )
-        if response.status_code in {403, 422, 503}:
+        if 500 <= response.status_code < 600:
+            emit_log(
+                logging.WARNING,
+                "manifest.code_search_retry",
+                query=query,
+                reason=f"http_{response.status_code}",
+            )
+            time.sleep(DEFAULT_GITHUB_CODE_SEARCH_RETRY_DELAY_SECONDS)
+            response = self.session.get(
+                f"{self.config.api_url}/search/code",
+                params={"q": query, "per_page": 100},
+                timeout=self.config.timeout_seconds,
+            )
+
+        if response.status_code in {403, 422, 429} or 500 <= response.status_code < 600:
             emit_log(
                 logging.WARNING,
                 "manifest.code_search_fallback",
