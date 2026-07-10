@@ -86,13 +86,12 @@ Invocation Logs를 켜면 다음 필드로 필터링할 수 있습니다.
 주요 로그 이벤트:
 
 - `invocation.started`
-- `event.accepted`
-- `github.config_loaded`
-- `manifest.candidates_resolved`
+- `invocation.completed`
+- `invocation.ignored`
+- `invocation.failed`
 - `manifest.file_updated`
 - `manifest.update_complete`
 - `ocir.cleanup_complete`
-- `invocation.completed`
 
 ## OCI Events Rule
 

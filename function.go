@@ -93,34 +93,17 @@ func processEvent(ctx context.Context, payload OCIEvent) (ProcessResult, error) 
 	if err != nil {
 		return ProcessResult{}, err
 	}
-	emitLog("event.accepted", fields{
-		"digest":          event.Digest,
-		"repository_path": event.RepositoryPath,
-		"resource_name":   event.ResourceName,
-		"tag":             event.Tag,
-	})
 
 	client, err := newGitHubClient(ctx)
 	if err != nil {
 		return ProcessResult{}, err
 	}
 	target := loadUpdateTarget(event)
-	emitLog("manifest.target_resolved", map[string]any{
-		"branch":           client.branch,
-		"image_repository": target.ImageRepository,
-		"manifest_root":    target.ManifestRoot,
-		"ocir_repository":  target.OCIRRepository,
-	})
 
 	filePaths, err := client.findCandidateYAMLFiles(ctx, target.ManifestRoot, target.ImageRepository)
 	if err != nil {
 		return ProcessResult{}, err
 	}
-	emitLog("manifest.files_listed", map[string]any{
-		"branch":        client.branch,
-		"file_count":    len(filePaths),
-		"manifest_root": target.ManifestRoot,
-	})
 
 	updatedFiles := make([]UpdatedFile, 0)
 	for _, filePath := range filePaths {
@@ -179,28 +162,17 @@ func updateManifestFile(ctx context.Context, client *GitHubClient, filePath, ima
 	}
 	updatedContent, replacements := replaceImageTagInText(currentContent, imageRepository, tag)
 	if replacements == 0 {
-		emitLog("manifest.file_skipped", map[string]any{
-			"image_repository": imageRepository,
-			"path":             filePath,
-			"reason":           "image_reference_not_found",
-		})
 		return nil, nil
 	}
 
 	commitSHA, err := client.updateFile(ctx, filePath, currentSHA, updatedContent, commitMessage)
 	if err != nil && githubErrorStatus(err) == 409 {
-		emitLog("manifest.file_conflict_retry", map[string]any{"path": filePath})
 		currentContent, currentSHA, err = client.getFile(ctx, filePath)
 		if err != nil {
 			return nil, err
 		}
 		updatedContent, replacements = replaceImageTagInText(currentContent, imageRepository, tag)
 		if replacements == 0 {
-			emitLog("manifest.file_skipped", map[string]any{
-				"image_repository": imageRepository,
-				"path":             filePath,
-				"reason":           "image_reference_not_found_after_retry",
-			})
 			return nil, nil
 		}
 		commitSHA, err = client.updateFile(ctx, filePath, currentSHA, updatedContent, commitMessage)

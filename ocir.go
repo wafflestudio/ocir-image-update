@@ -60,19 +60,29 @@ func cleanupPushedRepositoryImages(ctx context.Context, event ImagePushEvent, re
 	if err != nil {
 		return nil, err
 	}
+	finish := func(result *CleanupResult, imageCount int) *CleanupResult {
+		values := fields{"ocir_repository": repositoryName, "retain_count": retain, "unique_image_count": imageCount}
+		if result == nil {
+			values["status"] = "disabled"
+		} else {
+			values["status"], values["reason"] = result.Status, result.Reason
+			if result.DeletedCount != nil {
+				values["deleted_count"] = *result.DeletedCount
+			}
+		}
+		emitLog("ocir.cleanup_complete", values)
+		return result
+	}
 	if retain == 0 {
-		emitLog("ocir.cleanup_disabled", nil)
-		return nil, nil
+		return finish(nil, 0), nil
 	}
 	skipped := func(reason string) *CleanupResult {
-		return &CleanupResult{Status: "skipped", Reason: reason, RetainCount: retain}
+		return finish(&CleanupResult{Status: "skipped", Reason: reason, RetainCount: retain}, 0)
 	}
 	if event.CompartmentID == "" {
-		emitLog("ocir.cleanup_skipped", fields{"reason": "missing_compartment_id"})
 		return skipped("OCI event payload does not contain data.compartmentId"), nil
 	}
 	if event.Digest == "" {
-		emitLog("ocir.cleanup_skipped", fields{"reason": "missing_digest", "repository_path": event.RepositoryPath})
 		return skipped("OCI event payload does not contain data.additionalDetails.digest"), nil
 	}
 
@@ -80,42 +90,21 @@ func cleanupPushedRepositoryImages(ctx context.Context, event ImagePushEvent, re
 	if err != nil {
 		return nil, err
 	}
-	repository, err := findContainerRepository(ctx, client, event.CompartmentID, repositoryName, event.RepositoryPath)
+	images, repositoryID, err := listRepositoryImages(ctx, client, event.CompartmentID, repositoryName, event.RepositoryPath)
 	if err != nil {
 		return nil, err
 	}
-	if repository == nil {
-		emitLog("ocir.cleanup_skipped", fields{
-			"compartment_id": event.CompartmentID, "ocir_repository": repositoryName,
-			"reason": "repository_not_found", "repository_path": event.RepositoryPath,
-		})
-		return skipped("No matching OCIR repository found"), nil
-	}
-
-	images, err := listRepositoryImages(ctx, client, event.CompartmentID, str(repository.Id))
-	if err != nil {
-		return nil, err
-	}
-	noop := func(reason string) *CleanupResult {
+	noop := func() *CleanupResult {
 		empty := []DeletedImage{}
-		if reason != "" {
-			emitLog("ocir.cleanup_noop", fields{
-				"ocir_repository": repositoryName, "reason": reason, "retain_count": retain,
-			})
-		}
-		return &CleanupResult{DeletedImages: &empty, RetainCount: retain, RepositoryID: str(repository.Id), Status: "noop"}
+		return finish(&CleanupResult{DeletedImages: &empty, RetainCount: retain, RepositoryID: repositoryID, Status: "noop"}, len(images))
 	}
 	if len(images) == 0 {
-		return noop("repository_has_no_images"), nil
+		return noop(), nil
 	}
 
 	toDelete := selectImagesToDelete(images, retain, map[string]struct{}{event.Digest: {}})
 	if len(toDelete) == 0 {
-		emitLog("ocir.cleanup_noop", fields{
-			"current_digest": event.Digest, "ocir_repository": repositoryName,
-			"retain_count": retain, "unique_image_count": len(images),
-		})
-		return noop(""), nil
+		return noop(), nil
 	}
 
 	deleted := make([]DeletedImage, 0, len(toDelete))
@@ -125,20 +114,12 @@ func cleanupPushedRepositoryImages(ctx context.Context, event ImagePushEvent, re
 			return nil, fmt.Errorf("delete OCI image %s: %w", image.ImageID, err)
 		}
 		deleted = append(deleted, repositoryImageSummary(image))
-		emitLog("ocir.image_deleted", fields{
-			"digest": image.Digest, "image_id": image.ImageID,
-			"ocir_repository": repositoryName, "versions": image.Versions,
-		})
 	}
 	count := len(deleted)
-	emitLog("ocir.cleanup_complete", fields{
-		"deleted_count": count, "ocir_repository": repositoryName,
-		"retain_count": retain, "unique_image_count": len(images),
-	})
-	return &CleanupResult{
+	return finish(&CleanupResult{
 		DeletedImages: &deleted, DeletedCount: &count, RetainCount: retain,
-		RepositoryID: str(repository.Id), Status: "deleted",
-	}, nil
+		RepositoryID: repositoryID, Status: "deleted",
+	}, len(images)), nil
 }
 
 func newArtifactsClient() (artifacts.ArtifactsClient, error) {
@@ -153,7 +134,7 @@ func newArtifactsClient() (artifacts.ArtifactsClient, error) {
 	return client, nil
 }
 
-func findContainerRepository(ctx context.Context, client artifacts.ArtifactsClient, compartmentID string, names ...string) (*artifacts.ContainerRepositorySummary, error) {
+func listRepositoryImages(ctx context.Context, client artifacts.ArtifactsClient, compartmentID string, names ...string) ([]RepositoryImage, string, error) {
 	seen := map[string]bool{}
 	for _, name := range names {
 		name = strings.Trim(name, "/")
@@ -161,47 +142,27 @@ func findContainerRepository(ctx context.Context, client artifacts.ArtifactsClie
 			continue
 		}
 		seen[name] = true
+		var raw []artifacts.ContainerImageSummary
 		var page *string
 		for {
-			response, err := client.ListContainerRepositories(ctx, artifacts.ListContainerRepositoriesRequest{
-				CompartmentId: common.String(compartmentID), DisplayName: common.String(name),
+			response, err := client.ListContainerImages(ctx, artifacts.ListContainerImagesRequest{
+				CompartmentId: common.String(compartmentID), RepositoryName: common.String(name),
 				Limit: common.Int(1000), Page: page,
 			})
 			if err != nil {
-				return nil, fmt.Errorf("list OCI repositories: %w", err)
+				return nil, "", fmt.Errorf("list OCI images: %w", err)
 			}
-			for _, item := range response.Items {
-				if str(item.DisplayName) == name {
-					return &item, nil
-				}
-			}
+			raw = append(raw, response.Items...)
 			page = response.OpcNextPage
 			if str(page) == "" {
 				break
 			}
 		}
-	}
-	return nil, nil
-}
-
-func listRepositoryImages(ctx context.Context, client artifacts.ArtifactsClient, compartmentID, repositoryID string) ([]RepositoryImage, error) {
-	var raw []artifacts.ContainerImageSummary
-	var page *string
-	for {
-		response, err := client.ListContainerImages(ctx, artifacts.ListContainerImagesRequest{
-			CompartmentId: common.String(compartmentID), RepositoryId: common.String(repositoryID),
-			Limit: common.Int(1000), Page: page,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("list OCI images: %w", err)
-		}
-		raw = append(raw, response.Items...)
-		page = response.OpcNextPage
-		if str(page) == "" {
-			break
+		if len(raw) > 0 {
+			return summarizeRepositoryImages(raw), str(raw[0].RepositoryId), nil
 		}
 	}
-	return summarizeRepositoryImages(raw), nil
+	return []RepositoryImage{}, "", nil
 }
 
 func summarizeRepositoryImages(raw []artifacts.ContainerImageSummary) []RepositoryImage {

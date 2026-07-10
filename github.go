@@ -45,9 +45,6 @@ func newGitHubClient(ctx context.Context) (*GitHubClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve GitHub App installation for %s/%s: %w", owner, repo, err)
 	}
-	emitLog("github.app_installation_resolved", fields{
-		"installation_id": installation.GetID(), "owner": owner, "repo": repo,
-	})
 
 	transport := ghinstallation.NewFromAppsTransport(appsTransport, installation.GetID())
 	transport.BaseURL = apiURL
@@ -69,10 +66,6 @@ func newGitHubClient(ctx context.Context) (*GitHubClient, error) {
 		branch:                envOrDefault("GITHUB_BRANCH", defaultGitHubBranch),
 		commitMessageTemplate: envOrDefault("GITHUB_COMMIT_MESSAGE", defaultGitHubCommitMessage),
 	}
-	emitLog("github.config_loaded", fields{
-		"api_url": apiURL, "auth_mode": "github_app", "branch": client.branch,
-		"owner": owner, "repo": repo, "timeout_seconds": int(githubTimeout.Seconds()),
-	})
 	return client, nil
 }
 
@@ -110,24 +103,9 @@ func (c *GitHubClient) findCandidateYAMLFiles(ctx context.Context, root, image s
 		return nil, err
 	}
 	if available && len(paths) > 0 {
-		emitLog("manifest.candidates_resolved", fields{
-			"candidate_count": len(paths), "image_repository": image,
-			"manifest_root": root, "strategy": "code_search",
-		})
 		return paths, nil
 	}
-	if available {
-		emitLog("manifest.code_search_fallback", fields{"query": query, "reason": "empty_results"})
-	}
-
-	paths, err = c.listYAMLFiles(ctx, root)
-	if err == nil {
-		emitLog("manifest.candidates_resolved", fields{
-			"candidate_count": len(paths), "image_repository": image,
-			"manifest_root": root, "strategy": "git_tree_fallback",
-		})
-	}
-	return paths, err
+	return c.listYAMLFiles(ctx, root)
 }
 
 func (c *GitHubClient) searchCode(ctx context.Context, query string) ([]string, bool, error) {
@@ -138,13 +116,11 @@ func (c *GitHubClient) searchCode(ctx context.Context, query string) ([]string, 
 	result, err := search()
 	status := githubErrorStatus(err)
 	if status >= 500 {
-		emitLog("manifest.code_search_retry", fields{"query": query, "reason": fmt.Sprintf("http_%d", status)})
 		time.Sleep(200 * time.Millisecond)
 		result, err = search()
 		status = githubErrorStatus(err)
 	}
 	if status == 403 || status == 422 || status == 429 || status >= 500 {
-		emitLog("manifest.code_search_fallback", fields{"query": query, "reason": fmt.Sprintf("http_%d", status)})
 		return nil, false, nil
 	}
 	if err != nil {
