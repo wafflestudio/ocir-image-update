@@ -7,16 +7,13 @@
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
-      python = pkgs.python312.withPackages (ps: with ps; [
-        cryptography
-        pyjwt
-        requests
-      ]);
     in {
       devShells.${system}.default = pkgs.mkShell {
         packages = [
-          python
+          pkgs.go_1_25
         ];
+
+        CGO_ENABLED = "0";
       };
     };
 }

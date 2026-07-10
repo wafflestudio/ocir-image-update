@@ -5,6 +5,8 @@ OCI Container Registry의 이미지 push 이벤트
 `wafflestudio/waffle-world-oci`의 Argo CD manifest 이미지 태그를 갱신하는
 Oracle Function입니다.
 
+구현은 Go 1.24와 공식 OCI Go SDK/Fn Project Go FDK를 사용합니다.
+
 ## 동작 방식
 
 1. OCI Events가 OCIR push 이벤트를 이 함수로 전달합니다.
@@ -48,7 +50,6 @@ GITHUB_OWNER
 GITHUB_REPO
 GITHUB_BRANCH
 GITHUB_COMMIT_MESSAGE
-HTTP_TIMEOUT_SECONDS
 GITHUB_APP_PRIVATE_KEY
 GITHUB_APP_PRIVATE_KEY_SECRET_OCID
 MANIFEST_SCAN_ROOT
@@ -85,13 +86,12 @@ Invocation Logs를 켜면 다음 필드로 필터링할 수 있습니다.
 주요 로그 이벤트:
 
 - `invocation.started`
-- `event.accepted`
-- `github.config_loaded`
-- `manifest.candidates_resolved`
+- `invocation.completed`
+- `invocation.ignored`
+- `invocation.failed`
 - `manifest.file_updated`
 - `manifest.update_complete`
 - `ocir.cleanup_complete`
-- `invocation.completed`
 
 ## OCI Events Rule
 
@@ -130,7 +130,13 @@ Allow dynamic-group <functions-dynamic-group> to manage repos in compartment <co
 ## 로컬 테스트
 
 ```bash
-nix develop -c python -m unittest discover -s tests
+nix develop -c go test ./...
+```
+
+로컬 바이너리 빌드:
+
+```bash
+nix develop -c go build ./...
 ```
 
 ## GitHub Actions CI/CD
