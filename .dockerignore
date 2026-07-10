@@ -1,9 +1,7 @@
 .git
 .github
-.pytest_cache
-__pycache__
 .DS_Store
 examples
 flake.lock
 flake.nix
-tests
+*_test.go
