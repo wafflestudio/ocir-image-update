@@ -96,6 +96,13 @@ yny.ocir.io/ax1dvc8vmenm/ocir-image-update
 필요한 GitHub Actions secret:
 
 ```text
-OCIR_USERNAME=<docker login username for OCIR>
-OCIR_AUTH_TOKEN=<OCI auth token>
+OCI_AUTH_TOKEN=<members/waffle-deployer 사용자의 OCI Auth Token>
 ```
+
+OCIR 로그인은 `ax1dvc8vmenm/members/waffle-deployer` 계정을 사용합니다.
+`OCI_AUTH_TOKEN`에는 해당 계정의 OCI Auth Token을 등록해야 합니다.
+GitHub App private key와 OCI API 서명용 PEM 키는 사용할 수 없습니다.
+기존 `OCIR_USERNAME`, `OCIR_AUTH_TOKEN` secret은 더 이상 사용하지 않습니다.
+
+이 workflow는 이미지를 OCIR에 push하는 단계까지만 수행합니다.
+운영 Function에 적용하려면 해당 Function의 이미지 태그를 별도로 갱신해야 합니다.
