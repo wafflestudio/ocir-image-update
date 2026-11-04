@@ -8,7 +8,6 @@ from fdk import response
 
 from ocir_image_update import (
     ConfigError,
-    ManifestUpdateError,
     UnsupportedEventError,
     emit_log,
     process_event,
@@ -42,7 +41,7 @@ def handler(ctx, data: io.BytesIO = None):
             reason=str(exc),
             **invocation_fields,
         )
-    except (ConfigError, ManifestUpdateError, ValueError) as exc:
+    except (ConfigError, ValueError) as exc:
         status_code = 500
         result = {"status": "error", "reason": str(exc)}
         emit_log(
@@ -73,7 +72,7 @@ def handler(ctx, data: io.BytesIO = None):
             duration_ms=int((time.time() - started_at) * 1000),
             result_status=result.get("status"),
             status_code=status_code,
-            updated_file_count=len(result.get("updated_files", [])),
+            deleted_count=result.get("image_cleanup", {}).get("deleted_count", 0),
             **invocation_fields,
         )
 

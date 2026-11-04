@@ -1,5 +1,5 @@
 {
-  "description" = "Development shell for the OCIR image update Oracle Function";
+  "description" = "Development shell for the OCIR image cleanup Oracle Function";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -7,11 +7,7 @@
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { inherit system; };
-      python = pkgs.python312.withPackages (ps: with ps; [
-        cryptography
-        pyjwt
-        requests
-      ]);
+      python = pkgs.python312;
     in {
       devShells.${system}.default = pkgs.mkShell {
         packages = [
